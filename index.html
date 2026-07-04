@@ -482,8 +482,6 @@ footer{text-align:center;color:#687593;font-size:13px;margin:34px 0 12px}
       <h1>시민개발자 갤러리</h1>
       <p class="lead">학생들이 생성형 AI를 활용해 만든 웹 기반 프로그램을 공유하는 공간입니다. 작품을 실행해 보고 좋아요로 서로 응원해 주세요.</p>
       <div class="hero-tags">
-        <span>🎨 Canva 스타일 카드</span>
-        <span>⚡ 승인 후 빠른 반영</span>
         <span>❤️ 좋아요 응원</span>
       </div>
     </div>
@@ -535,6 +533,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycbyhWCUWlbr1utPUKwdNIznH
 let works = [];
 const likedKey = "hyosung_gallery_liked_jsonp";
 const tokenKey = "hyosung_gallery_user_token";
+const viewedKey = "hyosung_gallery_viewed_jsonp";
+const VIEW_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const gallery = document.querySelector("#gallery");
 const searchInput = document.querySelector("#searchInput");
 const sortSelect = document.querySelector("#sortSelect");
@@ -580,6 +580,20 @@ function getLiked(){
   catch{return []}
 }
 function setLiked(arr){localStorage.setItem(likedKey, JSON.stringify(arr.map(String)))}
+function getViewed(){
+  try{return JSON.parse(localStorage.getItem(viewedKey)) || {}}
+  catch{return {}}
+}
+function shouldRecordView(workId){
+  const viewed = getViewed();
+  const last = Number(viewed[String(workId)] || 0);
+  return Date.now() - last > VIEW_COOLDOWN_MS;
+}
+function markViewed(workId){
+  const viewed = getViewed();
+  viewed[String(workId)] = Date.now();
+  localStorage.setItem(viewedKey, JSON.stringify(viewed));
+}
 function toast(msg){
   const t = document.querySelector("#toast");
   t.textContent = msg;
@@ -711,10 +725,18 @@ async function likeWork(workId){
 async function viewWork(event, workId, url){
   event.preventDefault();
   if(!url){toast("작품 링크가 없습니다."); return;}
+
+  // 작품은 바로 열어 주고, 조회수는 같은 브라우저에서 6시간 안에는 1번만 올립니다.
   window.open(url, "_blank", "noopener,noreferrer");
+
+  if(!workId || !shouldRecordView(workId)) return;
+
   try{
-    await jsonp({action:"view", workId});
-    await loadWorks(true);
+    const result = await jsonp({action:"view", workId});
+    if(result && result.ok !== false){
+      markViewed(workId);
+      await loadWorks(true);
+    }
   }catch(e){
     // 작품 열기는 이미 처리했으므로 조회 기록 실패 메시지는 조용히 넘깁니다.
   }
